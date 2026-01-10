@@ -127,7 +127,7 @@ After=network.target
 [Service]
 User=root
 Group=nogroup
-ExecStart=/usr/bin/node /home/rock/camillanode/index.js
+ExecStart=/usr/bin/node /home/**userName**/camillanode/index.js
 WorkingDirectory=/home/**userName**/camillanode/
 Environment=PATH=/home/**userName**/camillanode/
 Restart=always
