@@ -155,11 +155,12 @@ function plotArray(canvas, array, col, lineWidth){
 	ctx.lineWidth = lineWidth;
 	ctx.setLineDash([]);
 
-	let stepSize = (w - textMargin) / (array.length + 1 );
 	const heightScale= 16.5; 
 	
-	for (let i=0;i<array.length;i++) {            		
-		x=  textMargin + i * stepSize;								
+	for (let i=0;i<array.length;i++) {
+		// Convert array index to frequency, then frequency to X coordinate
+		const freq = indexToFreq(i, array.length);
+		x = freqToX(freq, w);
 		y = ch-(heightScale* array[i][1]);
 		ctx.lineTo(x,y);				
 	}        
@@ -294,6 +295,20 @@ function createGrid(canvas) {
 }
 
 /**
+ * Convert array index to frequency (Hz) based on the logarithmic scale used in calculateFilterDataMatrix
+ * @param {number} idx - Array index
+ * @param {number} len - Total array length
+ * @returns {number} Frequency in Hz
+ */
+function indexToFreq(idx, len) {
+	// This matches the frequency calculation in calculateFilterDataMatrix
+	// w ranges from 0.001 to 1 (normalized to Nyquist frequency)
+	const w = Math.exp(Math.log(1 / 0.001) * idx / (len - 1)) * 0.001;
+	// Convert normalized frequency to actual frequency (sampleRate/2 = 20000 Hz)
+	return w * 20000;
+}
+
+/**
  * Convert frequency (Hz) to canvas X coordinate using logarithmic scale
  * @param {number} freq - Frequency in Hz
  * @param {number} canvasWidth - Total canvas width
@@ -336,7 +351,7 @@ function drawFilterMarker(ctx, freq, gain, q, color, options = {}) {
 	const dotRadius = options.dotRadius || 6;
 	const qLineHeight = options.qLineHeight || 8;
 	const minQLineWidth = options.minQLineWidth || 30;
-	const maxQLineWidth = options.maxQLineWidth || 80;
+	const maxQLineWidth = options.maxQLineWidth || 250;
 	
 	// Calculate canvas coordinates
 	const x = freqToX(freq, ctx.canvas.width);
