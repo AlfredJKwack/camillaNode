@@ -509,6 +509,7 @@ function yToGain(y, canvasHeight) {
  * @param {number} options.qLineHeight - Height of Q-value delimiter lines (default: 8px)
  * @param {number} options.minQLineWidth - Minimum Q line width (default: 30px)
  * @param {number} options.maxQLineWidth - Maximum Q line width (default: 80px)
+ * @param {boolean} options.isSelected - Whether marker is selected (default: false)
  * @return {void}
  */
 function drawFilterMarker(ctx, freq, gain, q, color, options = {}) {
@@ -516,6 +517,7 @@ function drawFilterMarker(ctx, freq, gain, q, color, options = {}) {
 	const qLineHeight = options.qLineHeight || 8;
 	const minQLineWidth = options.minQLineWidth || 30;
 	const maxQLineWidth = options.maxQLineWidth || 250;
+	const isSelected = options.isSelected || false;
 	
 	// Calculate canvas coordinates
 	const x = freqToX(freq, ctx.canvas.width);
@@ -531,7 +533,7 @@ function drawFilterMarker(ctx, freq, gain, q, color, options = {}) {
 	// Draw Q-value horizontal line with delimiters
 	ctx.save();
 	ctx.strokeStyle = color;
-	ctx.lineWidth = 1.5;
+	ctx.lineWidth = isSelected ? 2.5 : 1.5;
 	ctx.setLineDash([]);
 	
 	// Horizontal line
@@ -553,15 +555,28 @@ function drawFilterMarker(ctx, freq, gain, q, color, options = {}) {
 	ctx.stroke();
 	
 	// Draw the dot
+	const actualRadius = isSelected ? dotRadius * 1.3 : dotRadius;
 	ctx.beginPath();
-	ctx.arc(x, y, dotRadius, 0, 2 * Math.PI);
+	ctx.arc(x, y, actualRadius, 0, 2 * Math.PI);
 	ctx.fillStyle = color;
 	ctx.fill();
 	
 	// Add a border to the dot for better visibility
 	ctx.strokeStyle = '#FFF';
-	ctx.lineWidth = 1.5;
+	ctx.lineWidth = isSelected ? 2.5 : 1.5;
 	ctx.stroke();
+	
+	// Draw glow effect if selected
+	if (isSelected) {
+		ctx.shadowColor = color;
+		ctx.shadowBlur = 15;
+		ctx.beginPath();
+		ctx.arc(x, y, actualRadius, 0, 2 * Math.PI);
+		ctx.strokeStyle = color;
+		ctx.lineWidth = 1;
+		ctx.stroke();
+		ctx.shadowBlur = 0;
+	}
 	
 	ctx.restore();
 }
@@ -578,6 +593,7 @@ function drawFilterMarker(ctx, freq, gain, q, color, options = {}) {
  * @param {Function} options.interactiveFilter - Function(filterName, filterDef) => boolean to make interactive
  * @param {boolean} options.appendMarkers - Append to existing markers (multi-channel)
  * @param {boolean} options.drawGrid - Draw grid (disable for multi-channel overlays)
+ * @param {Set<string>|Array<string>} options.selectedFilterBases - Set of filter base names to highlight
  * @returns {Array<Array<number>>} Total response array
  */
 function plot(filterObject, canvas, name, color, channelNo, options = {}) {
@@ -586,7 +602,8 @@ function plot(filterObject, canvas, name, color, channelNo, options = {}) {
 		markerFilter = null,        // function(filterName, filterDef) => boolean to show marker
 		interactiveFilter = null,   // function(filterName, filterDef) => boolean to make interactive
 		appendMarkers = false,      // append to existing markers (multi-channel)
-		drawGrid = true             // draw grid (disable for multi-channel overlays)
+		drawGrid = true,            // draw grid (disable for multi-channel overlays)
+		selectedFilterBases = null  // Set/Array of filter base names to highlight
 	} = options;
 	
 	const ctx = canvas;        
@@ -604,9 +621,9 @@ function plot(filterObject, canvas, name, color, channelNo, options = {}) {
 		createGrid(ctx);
 	}
 	
-	canvas.totalArray = plotFilters(Object.keys(filterObject),ctx,color,channelNo,markerFilter,interactiveFilter,appendMarkers);
+	canvas.totalArray = plotFilters(Object.keys(filterObject),ctx,color,channelNo,markerFilter,interactiveFilter,appendMarkers,selectedFilterBases);
 
-	function plotFilters(filters, ctx, color, channelNo, markerFilter, interactiveFilter, appendMarkers) {
+	function plotFilters(filters, ctx, color, channelNo, markerFilter, interactiveFilter, appendMarkers, selectedFilterBases) {
 		let totalArray = new Array(QUADLEN).fill(0).map(() => new Array(QUADLEN).fill(0));
 		let dataMatrix=[];	
 		let filterNum=0;
@@ -659,10 +676,18 @@ function plot(filterObject, canvas, name, color, channelNo, options = {}) {
 			
 			// Only add marker if it should be shown
 			if (shouldShowMarker) {
+				// Compute filter base name (strip channel suffix for dual-channel matching)
+				const filterBase = filter.replace(/__c\d+$/, '');
+				
+				// Check if this marker should be selected
+				const isSelected = selectedFilterBases && 
+					(selectedFilterBases instanceof Set ? selectedFilterBases.has(filterBase) : selectedFilterBases.includes(filterBase));
+				
 				// Store filter parameters for marker drawing with identity
 				filterMarkers.push({
 					id: filter + (channelNo !== undefined ? `_ch${channelNo}` : ''),
 					filterName: filter,
+					filterBase: filterBase,
 					channelNo: channelNo,
 					freq: filterObject[filter].parameters.freq,
 					gain: filterObject[filter].parameters.gain,
@@ -672,7 +697,8 @@ function plot(filterObject, canvas, name, color, channelNo, options = {}) {
 					x: x,
 					y: y,
 					dotRadius: dotRadius,
-					interactive: isInteractive
+					interactive: isInteractive,
+					isSelected: isSelected
 				});
 			}
 			
@@ -684,7 +710,9 @@ function plot(filterObject, canvas, name, color, channelNo, options = {}) {
 		
 		// Draw filter markers on top of all curves
 		for (let marker of filterMarkers) {
-			drawFilterMarker(context, marker.freq, marker.gain, marker.q, marker.color);
+			drawFilterMarker(context, marker.freq, marker.gain, marker.q, marker.color, {
+				isSelected: marker.isSelected
+			});
 		}
 		
 		// Store marker metadata on canvas for interaction
@@ -809,6 +837,17 @@ export function enableEqPlotInteraction(canvas) {
 			
 			canvas.style.cursor = 'grabbing';
 			window.__eqplotDragInProgress = true;
+			
+			// Emit select event on click (selection happens immediately)
+			emitMarkerEvent('eqplot:marker-select', marker, {
+				freq: marker.freq,
+				gain: marker.gain,
+				q: marker.q
+			}, {
+				shiftKey: evt.shiftKey,
+				x: pt.x,
+				y: pt.y
+			});
 			
 			emitMarkerEvent('eqplot:marker-drag-start', marker, {
 				freq: marker.freq,

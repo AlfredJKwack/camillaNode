@@ -107,8 +107,11 @@ async function equalizerOnLoad() {
     // Plot the config
     plotConfig();              
     
-    // Enable interactive marker dragging
+    // Enable interactive marker dragging and selection
     setupPlotInteraction();
+    
+    // Enable PEQ element selection highlighting
+    setupPEQSelection();
 
     // change loading to false after 50ms to avoud update running multiple times during loading.            
     setInterval(function(){document.loading=false},50);            
@@ -285,6 +288,9 @@ function plotConfig() {
         return filterDef?.type === 'Biquad' && !filterName.startsWith('__');
     };
     
+    // Get current selection state
+    const selectedFilterBases = window.__eqSelectedBase ? new Set([window.__eqSelectedBase]) : null;
+    
     if (window.parent.activeSettings.peqDualChannel) {
         let colors = ["#B55","#55B","#5B5","#F33","#33F","#3F3"]
         let channelCount = DSP.getChannelCount();
@@ -299,7 +305,8 @@ function plotConfig() {
                 markerFilter: isPEQFilter,
                 interactiveFilter: isPEQFilter,
                 appendMarkers: channelNo > 0,
-                drawGrid: channelNo === 0
+                drawGrid: channelNo === 0,
+                selectedFilterBases: selectedFilterBases
             });
         }
 
@@ -310,7 +317,8 @@ function plotConfig() {
         let colorNum = (color[0]+color[1]*255+color[2]*255*255);
         plot(DSP.config.filters, canvas, DSP.config.title, colorNum, undefined, {
             markerFilter: isPEQFilter,
-            interactiveFilter: isPEQFilter
+            interactiveFilter: isPEQFilter,
+            selectedFilterBases: selectedFilterBases
         });            
     }    
 }
@@ -597,6 +605,77 @@ async function convertConfigs() {
         })
         
     }
+}
+
+/**
+ * Set up PEQ element selection highlighting
+ * Listens for PEQ element focus and marker selections to maintain bidirectional highlighting
+ * Handles dual-channel mode by highlighting all matching filter bases
+ * @returns {void}
+ */
+function setupPEQSelection() {
+    const PEQ = document.getElementById('PEQ');
+    
+    // Helper to clear all PEQ selections
+    function clearPEQSelections() {
+        const peqElements = PEQ.querySelectorAll('.peqElement');
+        peqElements.forEach(el => el.classList.remove('is-selected'));
+    }
+    
+    // Helper to select PEQ element(s) by filter base name
+    function selectPEQByFilterBase(filterBase) {
+        clearPEQSelections();
+        const peqElements = PEQ.querySelectorAll('.peqElement');
+        peqElements.forEach(el => {
+            const configName = el.getAttribute('configName');
+            if (!configName) return;
+            
+            // Strip channel suffix for comparison
+            const elBase = configName.replace(/__c\d+$/, '');
+            if (elBase === filterBase) {
+                el.classList.add('is-selected');
+            }
+        });
+    }
+    
+    // Listen for focus on any input/select within PEQ
+    PEQ.addEventListener('focusin', (evt) => {
+        const peqElement = evt.target.closest('.peqElement');
+        if (!peqElement) return;
+        
+        const configName = peqElement.getAttribute('configName');
+        if (configName) {
+            // Compute filter base (strip channel suffix)
+            const filterBase = configName.replace(/__c\d+$/, '');
+            window.__eqSelectedBase = filterBase;
+            selectPEQByFilterBase(filterBase);
+            plotConfig();
+        }
+    });
+    
+    // Listen for pointerdown on PEQ elements (clicking anywhere on the card)
+    PEQ.addEventListener('pointerdown', (evt) => {
+        const peqElement = evt.target.closest('.peqElement');
+        if (!peqElement) return;
+        
+        const configName = peqElement.getAttribute('configName');
+        if (configName) {
+            const filterBase = configName.replace(/__c\d+$/, '');
+            window.__eqSelectedBase = filterBase;
+            selectPEQByFilterBase(filterBase);
+            plotConfig();
+        }
+    });
+    
+    // Listen for marker selections from the plot
+    const canvas = document.getElementById('plotCanvas');
+    canvas.addEventListener('eqplot:marker-select', (evt) => {
+        const { filterName } = evt.detail;
+        const filterBase = filterName.replace(/__c\d+$/, '');
+        window.__eqSelectedBase = filterBase;
+        selectPEQByFilterBase(filterBase);
+        // Plot will already be updated by drag-start handler
+    });
 }
 
 /** Setup interactive plot marker dragging to adjust filter parameters

@@ -90,8 +90,11 @@ async function basicLoad() {
 
     window.addEventListener("resize",updateElementWidth);
     
-    // Enable interactive marker dragging
+    // Enable interactive marker dragging and selection
     setupPlotInteraction();
+    
+    // Enable knob selection highlighting
+    setupKnobSelection();
 
     const spec = document.getElementById("spectrum");
 
@@ -192,6 +195,9 @@ function plotConfig() {
     const markerFilter = (filterName, filterDef) => BASIC_TONE_FILTERS.has(filterName);
     const interactiveFilter = (filterName, filterDef) => BASIC_TONE_FILTERS.has(filterName);
     
+    // Get current selection state
+    const selectedFilterBases = window.__eqSelectedBase ? new Set([window.__eqSelectedBase]) : null;
+    
     if (window.parent.activeSettings.peqDualChannel) {
         let colors = ["#B55","#55B","#5B5","#F33","#33F","#3F3"]
         let channelCount = DSP.getChannelCount();
@@ -206,7 +212,8 @@ function plotConfig() {
                 markerFilter: channelNo === 0 ? markerFilter : () => false,
                 interactiveFilter: channelNo === 0 ? interactiveFilter : () => false,
                 appendMarkers: channelNo > 0,
-                drawGrid: channelNo === 0
+                drawGrid: channelNo === 0,
+                selectedFilterBases: selectedFilterBases
             });
         }
 
@@ -216,7 +223,8 @@ function plotConfig() {
         let colorNum = (color[0]+color[1]*255+color[2]*255*255);
         plot(DSP.config.filters, canvas, DSP.config.title, colorNum, undefined, {
             markerFilter: markerFilter,
-            interactiveFilter: interactiveFilter
+            interactiveFilter: interactiveFilter,
+            selectedFilterBases: selectedFilterBases
         });            
     }    
 }
@@ -319,6 +327,65 @@ async function initSpectrum(){
                 
 
     },100)
+}
+
+/**
+ * Set up knob selection highlighting
+ * Listens for knob interactions and marker selections to maintain bidirectional highlighting
+ * @returns {void}
+ */
+function setupKnobSelection() {
+    const toneControls = document.getElementById('toneControls');
+    
+    // Map knob labels to filter names
+    const labelToFilter = {
+        'Sub-bass': '__subBass',
+        'Bass': '__bass',
+        'Mids': '__mids',
+        'Upper Mids': '__upperMids',
+        'Treble': '__treble'
+    };
+    
+    // Helper to clear all knob selections
+    function clearKnobSelections() {
+        const knobs = toneControls.querySelectorAll('.knob');
+        knobs.forEach(k => k.classList.remove('is-selected'));
+    }
+    
+    // Helper to select a knob by filter name
+    function selectKnobByFilter(filterName) {
+        clearKnobSelections();
+        const knobs = toneControls.querySelectorAll('.knob');
+        knobs.forEach(knob => {
+            const label = knob.getAttribute('label');
+            if (labelToFilter[label] === filterName) {
+                knob.classList.add('is-selected');
+            }
+        });
+    }
+    
+    // Listen for knob pointerdown (user clicking a knob)
+    toneControls.addEventListener('pointerdown', (evt) => {
+        const knob = evt.target.closest('.knob');
+        if (!knob) return;
+        
+        const label = knob.getAttribute('label');
+        const filterName = labelToFilter[label];
+        if (filterName) {
+            window.__eqSelectedBase = filterName;
+            selectKnobByFilter(filterName);
+            plotConfig();
+        }
+    });
+    
+    // Listen for marker selections from the plot
+    const canvas = document.getElementById('plotCanvas');
+    canvas.addEventListener('eqplot:marker-select', (evt) => {
+        const { filterName } = evt.detail;
+        window.__eqSelectedBase = filterName;
+        selectKnobByFilter(filterName);
+        // Plot will already be updated by drag-start handler
+    });
 }
 
 /**
