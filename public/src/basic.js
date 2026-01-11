@@ -106,7 +106,11 @@ function updateElementWidth() {
     const ctx = document.getElementById('plotCanvas');    
     DSP = window.parent.DSP;            
     
-    canvas.width = basicControls.getBoundingClientRect().width;
+    // Compute canvas horizontal padding from CSS to ensure visual width alignment
+    const canvasStyle = getComputedStyle(canvas);
+    const paddingX = parseFloat(canvasStyle.paddingLeft) + parseFloat(canvasStyle.paddingRight);
+    
+    canvas.width = basicControls.getBoundingClientRect().width - paddingX;
     plotConfig();
 }
 

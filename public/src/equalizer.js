@@ -128,8 +128,13 @@ function updateElementWidth() {
     const barWidth= (spec.getBoundingClientRect().width - (barCount*6)) / barCount;
     document.documentElement.style.setProperty("--levelbar-width",barWidth+"px") 
     
-    const canvas = document.getElementById("plotCanvas");           
-    canvas.width = spec.getBoundingClientRect().width - 20;
+    const canvas = document.getElementById("plotCanvas");
+    
+    // Compute canvas horizontal padding from CSS to ensure visual width alignment
+    const canvasStyle = getComputedStyle(canvas);
+    const paddingX = parseFloat(canvasStyle.paddingLeft) + parseFloat(canvasStyle.paddingRight);
+    
+    canvas.width = spec.getBoundingClientRect().width - paddingX;
     plotConfig();
 }
 
