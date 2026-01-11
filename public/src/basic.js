@@ -86,8 +86,11 @@ async function basicLoad() {
     updateElementWidth();
 
     window.addEventListener("resize",updateElementWidth);
+    
+    // Enable interactive marker dragging
+    setupPlotInteraction();
 
-    const spec = document.getElementById("spectrum");   
+    const spec = document.getElementById("spectrum");
 
     if(window.parent.activeSettings.showBasicSpectrum) {        
         spec.style.display="grid";
@@ -179,6 +182,11 @@ function plotConfig() {
 }
 
 async function setTone() {
+    // Guard against running during drag to avoid conflicts
+    if (window.__eqplotDragInProgress) {
+        return;
+    }
+    
     const knobs = document.getElementsByClassName('knob');
     let subBassVal, bassVal, midsVal,upperMidsVal,trebleVal;            
 
@@ -261,6 +269,96 @@ async function initSpectrum(){
                 
 
     },100)
+}
+
+function setupPlotInteraction() {
+    const canvas = document.getElementById("plotCanvas");
+    
+    // Import and enable the interaction controller
+    import('/src/eqplot.js').then(module => {
+        const { enableEqPlotInteraction } = module;
+        enableEqPlotInteraction(canvas);
+    });
+    
+    let uploadTimer = null;
+    let plotTimer = null;
+    
+    // Mapping of filter names to knob instances
+    const filterToKnob = {
+        '__subBass': window.subBass,
+        '__bass': window.bass,
+        '__mids': window.mids,
+        '__upperMids': window.upperMids,
+        '__treble': window.treble
+    };
+    
+    // Throttled plot update using requestAnimationFrame
+    function scheduleThrottledPlot() {
+        if (plotTimer) return;
+        plotTimer = requestAnimationFrame(() => {
+            plotConfig();
+            plotTimer = null;
+        });
+    }
+    
+    // Debounced DSP upload
+    function scheduleDSPUpload() {
+        clearTimeout(uploadTimer);
+        uploadTimer = setTimeout(() => {
+            DSP.uploadConfig();
+        }, 100);
+    }
+    
+    // Handle marker drag events
+    canvas.addEventListener('eqplot:marker-drag-start', (evt) => {
+        // console.log('Drag start:', evt.detail);
+    });
+    
+    canvas.addEventListener('eqplot:marker-drag', (evt) => {
+        const { filterName, params } = evt.detail;
+        
+        if (!DSP.config.filters[filterName]) {
+            console.warn(`Filter ${filterName} not found in config`);
+            return;
+        }
+        
+        // Update DSP config parameters
+        if (params.freq !== undefined) {
+            DSP.config.filters[filterName].parameters.freq = params.freq;
+        }
+        if (params.gain !== undefined) {
+            DSP.config.filters[filterName].parameters.gain = params.gain;
+            
+            // Update corresponding knob (gain only, as knobs don't show freq/Q)
+            const knob = filterToKnob[filterName];
+            if (knob) {
+                // Set knob value without triggering change event
+                // The drag flag prevents the knob's change handler from running
+                const knobValue = params.gain * 10 + 181;
+                knob.setVal(knobValue);
+            }
+        }
+        if (params.q !== undefined) {
+            DSP.config.filters[filterName].parameters.q = params.q;
+        }
+        
+        // Throttled plot update for visual feedback
+        scheduleThrottledPlot();
+        
+        // Debounced DSP upload
+        scheduleDSPUpload();
+    });
+    
+    canvas.addEventListener('eqplot:marker-drag-end', async (evt) => {
+        // console.log('Drag end:', evt.detail);
+        
+        // Force immediate upload on drag end
+        clearTimeout(uploadTimer);
+        await DSP.uploadConfig();
+        
+        // Final plot update
+        plotConfig();
+    });
 }
 
 const { abs, min, max, round } = Math;

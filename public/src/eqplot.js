@@ -399,6 +399,22 @@ function freqToX(freq, canvasWidth) {
 }
 
 /**
+ * Convert canvas X coordinate to frequency (Hz) using logarithmic scale (inverse of freqToX)
+ * @param {number} x - X coordinate on canvas
+ * @param {number} canvasWidth - Total canvas width
+ * @returns {number} Frequency in Hz
+ */
+function xToFreq(x, canvasWidth) {
+	const width = canvasWidth - textMargin;
+	const logMin = Math.log10(MIN_FREQ);
+	const logMax = Math.log10(MAX_FREQ);
+	const normalizedX = (x - leftMargin) / width;
+	const logFreq = logMin + normalizedX * (logMax - logMin);
+	const freq = Math.pow(10, logFreq);
+	return Math.max(MIN_FREQ, Math.min(MAX_FREQ, freq));
+}
+
+/**
  * Convert gain (dB) to canvas Y coordinate
  * @param {number} gain - Gain in dB
  * @param {number} canvasHeight - Total canvas height
@@ -407,6 +423,17 @@ function freqToX(freq, canvasWidth) {
 function gainToY(gain, canvasHeight) {
 	const centerY = canvasHeight / 2;
 	return centerY - (gain * HEIGHT_SCALE);
+}
+
+/**
+ * Convert canvas Y coordinate to gain (dB) (inverse of gainToY)
+ * @param {number} y - Y coordinate on canvas
+ * @param {number} canvasHeight - Total canvas height
+ * @returns {number} Gain in dB
+ */
+function yToGain(y, canvasHeight) {
+	const centerY = canvasHeight / 2;
+	return (centerY - y) / HEIGHT_SCALE;
 }
 
 /**
@@ -477,7 +504,7 @@ function drawFilterMarker(ctx, freq, gain, q, color, options = {}) {
 	ctx.restore();
 }
 
-function plot(filterObject, canvas, name, color) {
+function plot(filterObject, canvas, name, color, channelNo) {
 	const ctx = canvas;        
 	const context = ctx.getContext('2d');             
 	let newColor;
@@ -491,9 +518,9 @@ function plot(filterObject, canvas, name, color) {
 	// Create the grid
 	createGrid(ctx); 
 	
-	canvas.totalArray = plotFilters(Object.keys(filterObject),ctx,color);
+	canvas.totalArray = plotFilters(Object.keys(filterObject),ctx,color,channelNo);
 
-	function plotFilters(filters, ctx, color) {
+	function plotFilters(filters, ctx, color, channelNo) {
 		let totalArray = new Array(QUADLEN).fill(0).map(() => new Array(QUADLEN).fill(0));
 		let dataMatrix=[];	
 		let filterNum=0;
@@ -534,13 +561,24 @@ function plot(filterObject, canvas, name, color) {
 			const filterSubtype = filterObject[filter].parameters.type;
 			const markerColor = typeColorMap[filterSubtype] || "#FFFFFF";
 			
-			// Store filter parameters for marker drawing
+			// Calculate canvas coordinates for hit testing
+			const x = freqToX(filterObject[filter].parameters.freq, ctx.width);
+			const y = gainToY(filterObject[filter].parameters.gain, ctx.height);
+			const dotRadius = 6; // Match default in drawFilterMarker
+			
+			// Store filter parameters for marker drawing with identity
 			filterMarkers.push({
+				id: filter + (channelNo !== undefined ? `_ch${channelNo}` : ''),
+				filterName: filter,
+				channelNo: channelNo,
 				freq: filterObject[filter].parameters.freq,
 				gain: filterObject[filter].parameters.gain,
 				q: filterObject[filter].parameters.q,
 				type: filterSubtype,
-				color: markerColor
+				color: markerColor,
+				x: x,
+				y: y,
+				dotRadius: dotRadius
 			});
 			
 			filterNum++;
@@ -553,6 +591,9 @@ function plot(filterObject, canvas, name, color) {
 		for (let marker of filterMarkers) {
 			drawFilterMarker(context, marker.freq, marker.gain, marker.q, marker.color);
 		}
+		
+		// Store marker metadata on canvas for interaction
+		ctx.__eqMarkers = filterMarkers;
 		
 		return totalArray;
 	}
@@ -590,6 +631,174 @@ function colorChange(startColor,colorIndex) {
 	// console.log("New color #",colorIndex,":",changedColor)
 	return changedColor;
 	
+}
+
+/**
+ * Enable interactive dragging of EQ plot markers
+ * @param {HTMLCanvasElement} canvas - The canvas element containing the plot
+ */
+export function enableEqPlotInteraction(canvas) {
+	const HIT_SLOP = 10; // Extra pixels around marker for easier clicking
+	const MIN_GAIN = -15; // Match plot vertical range
+	const MAX_GAIN = 15;
+	const MIN_Q = 0.1;
+	const MAX_Q = 10;
+	
+	let dragState = null; // { marker, startX, startY, startFreq, startGain, startQ }
+	
+	// Map client coordinates to canvas internal coordinates
+	function getCanvasPoint(evt) {
+		const rect = canvas.getBoundingClientRect();
+		const scaleX = canvas.width / rect.width;
+		const scaleY = canvas.height / rect.height;
+		return {
+			x: (evt.clientX - rect.left) * scaleX,
+			y: (evt.clientY - rect.top) * scaleY
+		};
+	}
+	
+	// Find marker at given canvas coordinates
+	function findMarkerAt(x, y) {
+		if (!canvas.__eqMarkers) return null;
+		
+		for (let marker of canvas.__eqMarkers) {
+			const dx = x - marker.x;
+			const dy = y - marker.y;
+			const dist = Math.sqrt(dx * dx + dy * dy);
+			if (dist <= marker.dotRadius + HIT_SLOP) {
+				return marker;
+			}
+		}
+		return null;
+	}
+	
+	// Dispatch custom event for pages to handle
+	function emitMarkerEvent(eventType, marker, params, gesture) {
+		const event = new CustomEvent(eventType, {
+			detail: {
+				filterName: marker.filterName,
+				channelNo: marker.channelNo,
+				params: params,
+				gesture: gesture,
+				source: 'eqplot'
+			},
+			bubbles: true
+		});
+		canvas.dispatchEvent(event);
+	}
+	
+	function onPointerDown(evt) {
+		const pt = getCanvasPoint(evt);
+		const marker = findMarkerAt(pt.x, pt.y);
+		
+		if (marker) {
+			evt.preventDefault();
+			dragState = {
+				marker: marker,
+				startX: pt.x,
+				startY: pt.y,
+				startFreq: marker.freq,
+				startGain: marker.gain,
+				startQ: marker.q,
+				shiftKey: evt.shiftKey
+			};
+			
+			canvas.style.cursor = 'grabbing';
+			window.__eqplotDragInProgress = true;
+			
+			emitMarkerEvent('eqplot:marker-drag-start', marker, {
+				freq: marker.freq,
+				gain: marker.gain,
+				q: marker.q
+			}, {
+				shiftKey: evt.shiftKey,
+				x: pt.x,
+				y: pt.y
+			});
+		}
+	}
+	
+	function onPointerMove(evt) {
+		if (!dragState) {
+			// Update cursor on hover
+			const pt = getCanvasPoint(evt);
+			const marker = findMarkerAt(pt.x, pt.y);
+			canvas.style.cursor = marker ? 'grab' : 'default';
+			return;
+		}
+		
+		evt.preventDefault();
+		const pt = getCanvasPoint(evt);
+		const params = {};
+		
+		if (dragState.shiftKey || evt.shiftKey) {
+			// Shift+drag: update Q based on vertical delta
+			const deltaY = pt.y - dragState.startY;
+			// Use exponential scaling: moving down increases Q, up decreases Q
+			const qScale = Math.exp(-deltaY / 120);
+			let newQ = dragState.startQ * qScale;
+			newQ = Math.max(MIN_Q, Math.min(MAX_Q, newQ));
+			newQ = Math.round(newQ * 100) / 100; // Round to 2 decimals
+			params.q = newQ;
+		} else {
+			// Normal drag: update frequency and gain
+			let newFreq = xToFreq(pt.x, canvas.width);
+			newFreq = Math.round(newFreq); // Round to nearest Hz
+			params.freq = newFreq;
+			
+			let newGain = yToGain(pt.y, canvas.height);
+			newGain = Math.max(MIN_GAIN, Math.min(MAX_GAIN, newGain));
+			newGain = Math.round(newGain * 10) / 10; // Round to 1 decimal
+			params.gain = newGain;
+		}
+		
+		emitMarkerEvent('eqplot:marker-drag', dragState.marker, params, {
+			shiftKey: dragState.shiftKey || evt.shiftKey,
+			x: pt.x,
+			y: pt.y
+		});
+	}
+	
+	function onPointerUp(evt) {
+		if (!dragState) return;
+		
+		evt.preventDefault();
+		const pt = getCanvasPoint(evt);
+		
+		emitMarkerEvent('eqplot:marker-drag-end', dragState.marker, {}, {
+			shiftKey: dragState.shiftKey,
+			x: pt.x,
+			y: pt.y
+		});
+		
+		dragState = null;
+		canvas.style.cursor = 'default';
+		window.__eqplotDragInProgress = false;
+	}
+	
+	function onPointerCancel(evt) {
+		if (dragState) {
+			dragState = null;
+			canvas.style.cursor = 'default';
+			window.__eqplotDragInProgress = false;
+		}
+	}
+	
+	// Attach listeners
+	canvas.addEventListener('pointerdown', onPointerDown);
+	canvas.addEventListener('pointermove', onPointerMove);
+	canvas.addEventListener('pointerup', onPointerUp);
+	canvas.addEventListener('pointercancel', onPointerCancel);
+	canvas.addEventListener('pointerleave', onPointerUp); // End drag if pointer leaves canvas
+	
+	// Return cleanup function
+	return function cleanup() {
+		canvas.removeEventListener('pointerdown', onPointerDown);
+		canvas.removeEventListener('pointermove', onPointerMove);
+		canvas.removeEventListener('pointerup', onPointerUp);
+		canvas.removeEventListener('pointercancel', onPointerCancel);
+		canvas.removeEventListener('pointerleave', onPointerUp);
+	};
 }
 
 export default plot;

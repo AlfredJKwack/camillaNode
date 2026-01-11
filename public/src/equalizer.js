@@ -101,11 +101,14 @@ async function equalizerOnLoad() {
 
     // Plot the config
     plotConfig();              
+    
+    // Enable interactive marker dragging
+    setupPlotInteraction();
 
     // change loading to false after 50ms to avoud update running multiple times during loading.            
     setInterval(function(){document.loading=false},50);            
 
-    const spec = document.getElementById("spectrum");   
+    const spec = document.getElementById("spectrum");
 
     
 
@@ -257,7 +260,7 @@ function plotConfig() {
             for (let filter of filterList) {     
                 channelFilters[filter]=DSP.config.filters[filter];
             }
-            plot(channelFilters,canvas,DSP.config.title,colors[channelNo]);
+            plot(channelFilters,canvas,DSP.config.title,colors[channelNo],channelNo);
         }
 
     } else {
@@ -513,6 +516,95 @@ async function convertConfigs() {
         })
         
     }
+}
+
+function setupPlotInteraction() {
+    const canvas = document.getElementById("plotCanvas");
+    
+    // Import and enable the interaction controller
+    import('/src/eqplot.js').then(module => {
+        const { enableEqPlotInteraction } = module;
+        enableEqPlotInteraction(canvas);
+    });
+    
+    let uploadTimer = null;
+    let plotTimer = null;
+    
+    // Throttled plot update using requestAnimationFrame
+    function scheduleThrottledPlot() {
+        if (plotTimer) return;
+        plotTimer = requestAnimationFrame(() => {
+            plotConfig();
+            plotTimer = null;
+        });
+    }
+    
+    // Debounced DSP upload
+    function scheduleDSPUpload() {
+        clearTimeout(uploadTimer);
+        uploadTimer = setTimeout(() => {
+            DSP.uploadConfig();
+        }, 100);
+    }
+    
+    // Handle marker drag events
+    canvas.addEventListener('eqplot:marker-drag-start', (evt) => {
+        // console.log('Drag start:', evt.detail);
+    });
+    
+    canvas.addEventListener('eqplot:marker-drag', (evt) => {
+        const { filterName, params } = evt.detail;
+        
+        if (!DSP.config.filters[filterName]) {
+            console.warn(`Filter ${filterName} not found in config`);
+            return;
+        }
+        
+        // Update DSP config parameters
+        if (params.freq !== undefined) {
+            DSP.config.filters[filterName].parameters.freq = params.freq;
+        }
+        if (params.gain !== undefined) {
+            DSP.config.filters[filterName].parameters.gain = params.gain;
+        }
+        if (params.q !== undefined) {
+            DSP.config.filters[filterName].parameters.q = params.q;
+        }
+        
+        // Update DOM input fields (without triggering change events)
+        const filterElement = document.getElementById(filterName);
+        if (filterElement && filterElement.filter) {
+            const peqParams = filterElement.filter.elementCollection.peqParams;
+            if (peqParams) {
+                if (params.freq !== undefined && peqParams.children['Frequency']) {
+                    peqParams.children['Frequency'].value = params.freq;
+                }
+                if (params.gain !== undefined && peqParams.children['Gain']) {
+                    peqParams.children['Gain'].value = params.gain;
+                }
+                if (params.q !== undefined && peqParams.children['Q']) {
+                    peqParams.children['Q'].value = params.q;
+                }
+            }
+        }
+        
+        // Throttled plot update for visual feedback
+        scheduleThrottledPlot();
+        
+        // Debounced DSP upload
+        scheduleDSPUpload();
+    });
+    
+    canvas.addEventListener('eqplot:marker-drag-end', async (evt) => {
+        // console.log('Drag end:', evt.detail);
+        
+        // Force immediate upload on drag end
+        clearTimeout(uploadTimer);
+        await DSP.uploadConfig();
+        
+        // Final plot update
+        plotConfig();
+    });
 }
 
 const { abs, min, max, round } = Math;
