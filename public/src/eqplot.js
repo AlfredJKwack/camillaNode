@@ -295,6 +295,81 @@ function createGrid(canvas) {
 }
 
 /**
+ * Generate a palette of visually distinct colors based on the number of types
+ * @param {number} count - Number of colors needed
+ * @returns {Array<string>} Array of color hex strings
+ */
+function generateColorPalette(count) {
+	const colors = [];
+	const saturation = 70; // 70% saturation for vibrant colors
+	const lightness = 60;  // 60% lightness for good visibility
+	
+	for (let i = 0; i < count; i++) {
+		// Distribute hues evenly around the color wheel
+		const hue = (i * 360 / count) % 360;
+		const color = hslToHex(hue, saturation, lightness);
+		colors.push(color);
+	}
+	
+	return colors;
+}
+
+/**
+ * Convert HSL to hex color string
+ * @param {number} h - Hue (0-360)
+ * @param {number} s - Saturation (0-100)
+ * @param {number} l - Lightness (0-100)
+ * @returns {string} Hex color string (e.g., "#FF5733")
+ */
+function hslToHex(h, s, l) {
+	s /= 100;
+	l /= 100;
+	
+	const c = (1 - Math.abs(2 * l - 1)) * s;
+	const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+	const m = l - c / 2;
+	
+	let r = 0, g = 0, b = 0;
+	
+	if (h >= 0 && h < 60) {
+		r = c; g = x; b = 0;
+	} else if (h >= 60 && h < 120) {
+		r = x; g = c; b = 0;
+	} else if (h >= 120 && h < 180) {
+		r = 0; g = c; b = x;
+	} else if (h >= 180 && h < 240) {
+		r = 0; g = x; b = c;
+	} else if (h >= 240 && h < 300) {
+		r = x; g = 0; b = c;
+	} else if (h >= 300 && h < 360) {
+		r = c; g = 0; b = x;
+	}
+	
+	const toHex = (val) => {
+		const hex = Math.round((val + m) * 255).toString(16);
+		return hex.length === 1 ? '0' + hex : hex;
+	};
+	
+	return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/**
+ * Create a mapping of filter types to colors
+ * @param {Array<string>} types - Array of filter type names
+ * @returns {Object} Object mapping type names to color hex strings
+ */
+function createTypeColorMap(types) {
+	const colors = generateColorPalette(types.length);
+	const typeColorMap = {};
+	
+	types.forEach((type, index) => {
+		typeColorMap[type] = colors[index];
+	});
+	
+	return typeColorMap;
+}
+
+/**
  * Convert array index to frequency (Hz) based on the logarithmic scale used in calculateFilterDataMatrix
  * @param {number} idx - Array index
  * @param {number} len - Total array length
@@ -427,6 +502,18 @@ function plot(filterObject, canvas, name, color) {
 		// Get the 2D context from the canvas for marker drawing
 		const context = ctx.getContext('2d');
 		
+		// Extract all unique filter subtypes to create color mapping
+		const filterSubtypes = new Set();
+		for (let filter of filters) {
+			if (filterObject[filter].type === "Biquad" && filterObject[filter].parameters.type) {
+				filterSubtypes.add(filterObject[filter].parameters.type);
+			}
+		}
+		
+		// Create type-to-color mapping
+		const subtypeArray = Array.from(filterSubtypes).sort(); // Sort for consistency
+		const typeColorMap = createTypeColorMap(subtypeArray);
+		
 		for (let filter of filters) {  
 			// if (filterObject[filter].type=="Gain") continue;
 			
@@ -438,15 +525,22 @@ function plot(filterObject, canvas, name, color) {
 				totalArray[i][0]=dataMatrix[i][0]
 				totalArray[i][1]=dataMatrix[i][1]+totalArray[i][1];        
 			}
+			
+			// Use the old color scheme for the response curves
 			let newColor = colorChange(color,filterNum);
 			plotArray(ctx,dataMatrix,"#"+newColor,0.5);
+			
+			// Get type-based color for the marker
+			const filterSubtype = filterObject[filter].parameters.type;
+			const markerColor = typeColorMap[filterSubtype] || "#FFFFFF";
 			
 			// Store filter parameters for marker drawing
 			filterMarkers.push({
 				freq: filterObject[filter].parameters.freq,
 				gain: filterObject[filter].parameters.gain,
 				q: filterObject[filter].parameters.q,
-				color: "#"+newColor
+				type: filterSubtype,
+				color: markerColor
 			});
 			
 			filterNum++;
