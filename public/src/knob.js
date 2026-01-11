@@ -51,9 +51,10 @@ class EQKnob {
                     }              
 
                     const valElement = knob.children[1];
-                    valElement.innerText=((val-31)/10)+offset;
+                    const displayValue = ((val-31)/10)+offset;
+                    valElement.innerText = Number(displayValue.toFixed(1));
                     valElement.style.opacity='1';
-                    setTimeout(function(e){e.style.opacity='0';},1000,valElement);     
+                    setTimeout(function(e){e.style.opacity='0';},1000,valElement);
                 }
             })
         })        
@@ -87,8 +88,10 @@ class EQKnob {
     }
 
     setVal(v) {
-        this.knobHeadDot.setAttribute("val",v);
-        return v;
+        const num = Number(v);
+        const clean = Number.isFinite(num) ? Math.round(num) : v;
+        this.knobHeadDot.setAttribute("val", clean);
+        return clean;
     }
 
 
@@ -98,4 +101,4 @@ class EQKnob {
 }
 
 
-export default EQKnob; 
+export default EQKnob;
