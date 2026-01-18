@@ -7,357 +7,179 @@
 </head>
 
 <script type="module">
-    import camillaDSP from "/src/camillaDSP.js"
-    // document.addEventListener("DOMContentLoaded",onload);
-</script>
-
-<script>
-    const nodeTypes ={
-        input:"input",
-        output:"output",
-        mixer:"mixer",
-        filter:"filter",
-        processor:"processor",
-
-    }
-
-    selectedNode=undefined;
-    selectedConnector=undefined;
-    selectedLine=undefined;
-
-    function onload() {
-        let nodes = document.getElementsByClassName("node");
-        let editor = document.getElementById("editor");
-        for (let i=0;i<nodes.length;i++) {
-            nodes[i].addEventListener("mousemove",onMouseMove);      
-            nodes[i].addEventListener("mousedown",onMouseDown);            
-            nodes[i].addEventListener("mouseover",onMouseOver);      
-            nodes[i].addEventListener("mouseout",onMouseOut);      
-            nodes[i].addEventListener("mouseup",onMouseUp);            
-            nodes[i].addEventListener("dblclick",onDblClick);            
-        }
-        editor.addEventListener("mouseup",onMouseUp);
-        editor.addEventListener("mousemove",onMouseMove);
-        editor.addEventListener("mousedown",onMouseDown);        
-        editor.addEventListener("dblclick",editorDblClick);
-        editor.addEventListener("click",editorClick);
-
-        window.nodeWidth = 100;
-        window.nodeHeight = 100;
-
-        let editorRect = editor.getBoundingClientRect();
-        window.editorWidth = editorRect.width;
-        window.editorHeight = editorRect.height;
-
-        window.editorOffsetX = editorRect.left;
-        window.editorOffsetY = editorRect.top;
-    }
-
-    function onMouseDown(e) {   
-        // exit if not left button  
-        if (e.button!=0) return;
-        
-        // If target is node, prepare for movement   
-        if ([...e.target.classList].includes("node")) {
-            selectedNode=e.target;            
-            selectedNode.classList.add("selectedNode")
-            selectedNode.startClientX = e.clientX - selectedNode.offsetLeft;
-            selectedNode.startClientY = e.clientY- selectedNode.offsetTop;
-            selectedNode.left = selectedNode.getBoundingClientRect().left - selectedNode.offsetLeft;
-            selectedNode.top = selectedNode.getBoundingClientRect().top - selectedNode.offsetTop;
-
-        // If target is connector, create a line for connection
-        } else if ([...e.target.classList].includes("connector")) {
-            selectedConnector = e.target;
-            let line = document.createElement("div");
-            document.getElementById('editor').appendChild(line);        
-            line.className='line';
-            selectedLine = line;
-
-            let rect = e.target.getBoundingClientRect();                        
-            line.from={"x":0,"y":0}; 
-            line.from.x = rect.left + rect.width/2 - line.parentElement.offsetLeft -2;
-            line.from.y = rect.top + rect.height/2 - line.parentElement.offsetTop -2;
-            
-        } else {
-    
-        }
-    }
-
-    function onMouseUp(e) {
-        if (selectedNode!=undefined) selectedNode.classList.remove("selectedNode")            
-        if (selectedConnector!=undefined) selectedConnector.classList.remove("selectedConnector")
-        if (selectedLine!=undefined) {            
-            let target = e.target;
-            let isTargetNode = [...e.target.classList].includes("node")
-            let isTargetConnector = [...e.target.classList].includes("connector");
-
-            // If mouse up target is a node, select its left connector
-            if (isTargetNode) {                     
-                target = e.target.children['connectorL'];                
-                isTargetConnector=true;
-            }
-            
-            if (isTargetConnector) {                
-                console.log("Target connector..")
-                let left = parseFloat(selectedLine.style.left.replace("px",""));
-                let top = parseFloat(selectedLine.style.top.replace("px",""));
-                let len = parseFloat(selectedLine.style.width.replace("px",""))
-                let angle = parseFloat(selectedLine.style.transform.replace("rotate(","").replace("deg)",""));
-                let right =  left + Math.cos(angle/180*Math.PI) * len;
-                let bottom =  top + Math.sin(angle/180*Math.PI) * len;
-                selectedLine.rect={"left":left,"top":top,"len":len,"angle":angle,"right":right,"bottom":bottom};
-
-                // Align the line end to the center of the connector
-                let rect = target.getBoundingClientRect();                
-                let to ={"x":rect.left ,"y":rect.top - target.offsetTop - rect.height/2 - 4}
-                selectedLine.to = to;                
-
-                drawLine(selectedLine,selectedLine.from,to);                
-
-                // Add line to node lines array
-                let fromNode = selectedConnector.parentElement;
-                let toNode = target.parentElement;
-                fromNode.lines.push({"type":"from","lineElement":selectedLine});
-                toNode.lines.push({"type":"to","lineElement":selectedLine});
-
-                // selectedLine.nodes=[];
-                // selectedLine.nodes.push({"type":"from","nodeElement":fromNode})
-                // selectedLine.nodes.push({"type":"to","toElement":fromNode})
-
-                selectedLine.classList.remove("selectedLine");
-
-            } else {
-                selectedLine.parentElement.removeChild(selectedLine);
-            }
-            
-        }
-        selectedNode=undefined;
-        selectedConnector=undefined;
-        selectedLine=undefined;
-        // console.log(selectedNode);
-    }
-
-    function onMouseMove(e) {
-
-        document.getElementById("pos").innerText="x : "+e.clientX+" y : "+e.clientY+"\n";
-
-        let xCoord = e.clientX;
-        let yCoord = e.clientY;
-
-        if (selectedNode!=undefined) {             
-            let left = parseInt(xCoord - selectedNode.startClientX);
-            let top  = parseInt(yCoord - selectedNode.startClientY);
-            let maxWidth = selectedNode.parentElement.getBoundingClientRect().width;
-            let maxHeight = selectedNode.parentElement.getBoundingClientRect().width;
-            if (left<0) left=0; 
-            // if (left>window.editorWidth-window.nodeWidth) left=window.editorWidth-window.nodeWidth
-            if (top<0) top=0; 
-            // if (top>window.editorHeight-window.nodeHeight) top=window.editorHeight-window.nodeHeight
-
-            left = clamp(left,10);
-            top = clamp(top,20);
-
-            selectedNode.style.left = left+'px';
-            selectedNode.style.top = top+'px';              
-
-            // Move lines
-            for (let line of selectedNode.lines) {           
-                // console.log("lines of node:",line)     
-                if (line.type=="from") {                    
-                    let fromConnector = selectedNode.children['connectorR']
-                    let fromConnectorRect = fromConnector.getBoundingClientRect()
-                    let from = {"x":fromConnectorRect.left ,"y":fromConnectorRect.top - fromConnector.offsetTop - 10 - 3};                    
-                    line.lineElement.from = from;
-                    drawLine(line.lineElement, from, line.lineElement.to)
-                    
-                } else if (line.type=="to") {                                        
-                    let toConnector = selectedNode.children['connectorL']
-                    let toConnectorRect = toConnector.getBoundingClientRect()                    
-                    let to = {"x":toConnectorRect.left - toConnector.offsetLeft ,"y":toConnectorRect.top - toConnector.offsetTop - 10 - 3};                    
-                    line.lineElement.to = to;
-                    drawLine(line.lineElement,line.lineElement.from,to)
-                    
-                }
-            }
-
-
-
-            // console.log(left,top,e.clientX,e.clientY)
-        } 
-
-        if (selectedLine!=undefined) {            
-            drawLine(selectedLine,selectedLine.from,{"x":e.clientX - selectedLine.parentElement.offsetLeft,"y":e.clientY- selectedLine.parentElement.offsetTop})
-            selectedLine.style.right = e.clientX+'px';
-            selectedLine.style.bottom = e.clientY+'px';           
-        }
-    }
-
-    function onMouseOver(e) {
-        e.target.classList.add("hoverNode")
-    }
-
-    function onMouseOut(e) {
-        e.target.classList.remove("hoverNode")
-    }
-
-    function nodeContextShow(e) {
-        e.preventDefault();
-    }
-
-    function onDblClick() {
-     
-    }
-
-    function editorClick() {
-     
-    }
-
-    function editorDblClick(e) {            
-        addNode(e.clientX - window.nodeWidth  ,e.clientY - window.nodeHeight )     
-    }
-
-    function addNode(left,top,type) {        
-        if (left==undefined || left<0 ) left = 10;
-        if (top==undefined || top<0 ) top = 20;
-        if (type==undefined) type= nodeTypes.filter;
-
-        left = clamp(left,10);
-        top = clamp(top,20);
-
-
-        let editor = document.getElementById("editor");
-        let node = document.createElement("div");        
-        node.className="node";
-        node.setAttribute("type",type)
-
-        node.addEventListener("mousedown",onMouseDown);
-        node.addEventListener("mouseup",onMouseUp);            
-        node.addEventListener("mousemove",onMouseMove);      
-        node.addEventListener("mouseover",onMouseOver);      
-        node.addEventListener("mouseout",onMouseOut);      
-        node.addEventListener("mouseup",onMouseUp);            
-        node.addEventListener("dblclick",onDblClick);            
-        
-        node.style.left = left+'px';
-        node.style.top = top+'px';
-        node.lines=[];
-
-        // connectors
-        if (type!=nodeTypes.input) {
-            let connectorL = document.createElement("div");
-            connectorL.className='connector';
-            connectorL.classList.add("left")
-            connectorL.style.left="0px";        
-            connectorL.id="connectorL";
-            node.appendChild(connectorL);
-        }
-
-        if (type!=nodeTypes.output) {
-            let connectorR = document.createElement("div");
-            connectorR.className='connector';
-            connectorR.classList.add("right")
-            connectorR.style.right="0px";                
-            connectorR.id="connectorR";
-            node.appendChild(connectorR);
-        }
-
-        editor.appendChild(node);
-    }
-
-    function drawLine(lineElement,from,to) {
-
-
-        let x = (to.x-from.x);
-        let y = (to.y-from.y);
-        let len = Math.sqrt( x*x + y*y );
-        let angle = Math.atan(y/x)/Math.PI*180;
-        lineElement.style.left=from.x+"px";
-        lineElement.style.top=from.y+"px";
-        lineElement.style.width=len+"px";        
-        lineElement.style.transform="rotate("+angle+"deg)"
-        // console.log(from,to,x,y,angle)
-    }
-
-    function clamp(val, mod) {
-        return val - ( val % mod);        
-    }
-
+    import { roomOnLoad } from "/src/room.js"
+    document.addEventListener("DOMContentLoaded", roomOnLoad);
 </script>
     
 <style>
+    /* Editor container */
     #editor {
-        width: 80vw;
-        height: 80vh;
-        display: block;
-        position: relative;
-        border: 1px solid wheat;
+        width: calc(100vw - 270px);
+        height: calc(100vh - 100px);
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        padding: 20px;
         background-color: hsl(var(--bck-hue),20%, 10%);        
-        overflow: scroll;
+        overflow-y: auto;
+        overflow-x: hidden;
     }
 
+    /* Lane (channel row) */
+    .lane {
+        display: flex;
+        align-items: flex-start;
+        background-color: hsl(var(--bck-hue),25%, 12%);
+        border: 1px solid hsl(var(--bck-hue), 20%, 20%);
+        border-radius: 8px;
+        padding: 10px;
+        min-height: 120px;
+    }
+
+    /* Lane label */
+    .laneLabel {
+        min-width: 80px;
+        padding: 8px;
+        font-weight: bold;
+        color: hsl(var(--bck-hue), 30%, 60%);
+        display: flex;
+        align-items: center;
+    }
+
+    /* Node container (horizontal scrollable area within a lane) */
+    .nodeContainer {
+        flex: 1;
+        position: relative;
+        overflow-x: auto;
+        overflow-y: visible;
+        height: 100px;
+        padding: 10px 0;
+    }
+
+    /* Node */
     .node {
         position: absolute;
-        height: 10vh;
-        aspect-ratio: 1.5;
-        display: block;        
-        background-color: hsl(var(--bck-hue),30%, 30%);        
-        border-radius: 10px;
-        border: 2px outset hsl(var(--bck-hue), 20%, 50%);
-        top:10px;
-        left: 10px;        
+        display: flex;
+        flex-direction: column;
+        background-color: hsl(var(--bck-hue),30%, 25%);
+        border: 2px solid hsl(var(--bck-hue), 30%, 35%);
+        border-radius: 8px;
+        overflow: hidden;
         user-select: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        transition: transform 0.1s, box-shadow 0.1s;
     }
 
-    .selectedNode {
-        background-color: hsl(var(--bck-hue),35%, 25%);        
+    .node:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        border-color: hsl(var(--bck-hue), 40%, 50%);
     }
 
-    .hoverNode {
-        border: 2px outset hsl( var(--bck-hue), 25%, 70%)
+    /* Node type-specific colors */
+    .node[data-type="input"] {
+        border-color: hsl(120, 50%, 40%);
     }
 
+    .node[data-type="output"] {
+        border-color: hsl(0, 50%, 40%);
+    }
+
+    .node[data-type="mixer"] {
+        border-color: hsl(200, 50%, 40%);
+    }
+
+    .node[data-type="filter"] {
+        border-color: hsl(280, 50%, 40%);
+    }
+
+    /* Node header */
+    .nodeHeader {
+        background-color: hsl(var(--bck-hue),35%, 20%);
+        padding: 4px 8px;
+        font-size: 10px;
+        font-weight: bold;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--bck-hue), 30%, 70%);
+    }
+
+    /* Node content */
+    .nodeContent {
+        padding: 8px;
+        font-size: 11px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .nodeDetail {
+        color: hsl(var(--bck-hue), 20%, 80%);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .nodeDetail.small {
+        font-size: 10px;
+        color: hsl(var(--bck-hue), 20%, 60%);
+    }
+
+    /* Connectors */
     .connector {
-        position:absolute;
-        width: 12px;
-        top: 50%;
-        aspect-ratio: 1;
-        border-radius: 50%;        
-        transform: translate(50%,-50%);
-        user-select: none;
-    }
-
-    .left {
-        background-color: rgb(109, 183, 243);
-        transform: translate(-50%,-50%);
-    }
-
-    .right {
-        background-color: rgb(228, 166, 166);
-        transform: translate(50%,-50%);
-    }
-
-    .line {
         position: absolute;
-        display: block;
-        width: 1px;
-        height: 3px;        
-        background:linear-gradient(90deg, rgb(228, 166, 166), rgb(109, 183, 243));
-        user-select: none;
-        transform-origin: 0px 0px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 10;
+    }
 
+    .connector.left {
+        left: -5px;
+        background-color: hsl(200, 70%, 60%);
+        border: 2px solid hsl(200, 70%, 40%);
+    }
+
+    .connector.right {
+        right: -5px;
+        background-color: hsl(30, 70%, 60%);
+        border: 2px solid hsl(30, 70%, 40%);
+    }
+
+    /* Wire (connection line) */
+    .wire {
+        position: absolute;
+        height: 2px;
+        background: linear-gradient(90deg, hsl(30, 70%, 60%), hsl(200, 70%, 60%));
+        transform-origin: 0 0;
+        pointer-events: none;
+        z-index: 1;
+    }
+
+    /* Error message */
+    .error {
+        padding: 20px;
+        margin: 20px;
+        background-color: hsl(0, 50%, 20%);
+        border: 1px solid hsl(0, 50%, 40%);
+        border-radius: 8px;
+        color: hsl(0, 50%, 80%);
+    }
+
+    .error h3 {
+        margin-top: 0;
+        color: hsl(0, 60%, 70%);
     }
 </style>
 
 <body>
-    <div id="sectionMainTitle"><img src="img/icon/room.png" class="icon">Room EQ</div>
-    <div id="editor">
-        
-    </div>
-    <div id="pos" style="font-size:13px"></div>
-    <div id="contextMenu"></div>
+    <div id="sectionMainTitle"><img src="img/icon/room.png" class="icon">Room EQ - Pipeline Editor</div>
+    <div id="editor"></div>
 
 </body>
 
 </html>
-
