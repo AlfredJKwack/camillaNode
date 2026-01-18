@@ -129,16 +129,12 @@ async function equalizerOnLoad() {
 }
 
 /**
- * Update canvas width and spectrum bar widths to match window dimensions
- * Ensures proper visual alignment by recalculating widths and accounting for CSS padding
+ * Update canvas width to match spectrum container dimensions
+ * Ensures proper visual alignment by accounting for CSS padding
  * @returns {void}
  */
 function updateElementWidth() {
     const spec = document.getElementById("spectrum");
-    const barCount=spec.childNodes.length-1;
-    const barWidth= (spec.getBoundingClientRect().width - (barCount*6)) / barCount;
-    document.documentElement.style.setProperty("--levelbar-width",barWidth+"px") 
-    
     const canvas = document.getElementById("plotCanvas");
     
     // Compute canvas horizontal padding from CSS to ensure visual width alignment
@@ -485,9 +481,6 @@ async function initSpectrum(parentWindow){
     if (parentWindow==undefined) parentWindow=window;    
 
     const spec = parentWindow.document.getElementById("spectrum");   
-    const barCount=freq.length-1;
-    const barWidth= ((spec.getBoundingClientRect().width - (barCount*6)) / barCount);
-    parentWindow.document.documentElement.style.setProperty("--levelbar-width",barWidth+"px");
     
     let barHeight = spec.getBoundingClientRect().height;
     let boxHeight = 6+3;
@@ -497,7 +490,7 @@ async function initSpectrum(parentWindow){
 
     let bar,box;
     spec.innerHTML='';
-    for (i=0;i<=barCount;i++){
+    for (i=0;i<freq.length;i++){
         bar = document.createElement("div");
         bar.className='levelbar';        
         bar.setAttribute('freq',freq[i]);        

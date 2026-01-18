@@ -56,11 +56,12 @@
 
         #spectrum {
             display: grid;        
-            grid-template-columns: repeat(60,auto);        
-            gap:0px;            
-            align-items:end;
-            /* padding: 5px; */
+            grid-template-columns: repeat(30, minmax(0, 1fr));        
+            gap: 4px;            
+            align-items: end;
+            padding: 5px;
             height: var(--spectrum-height);
+            box-sizing: border-box;
         }
 
         .levelbar {        
@@ -70,9 +71,9 @@
             align-items: center;
             justify-items: baseline;
             position: relative;
-            width: var(--levelbar-width);            
-            height: calc(var(--spectrum-height) - 0px);
-            margin-inline: 2px;                
+            width: 100%;            
+            height: calc(var(--spectrum-height) - 10px);
+            margin: 0;                
             background-color: hsl(var(--bck-hue), 30%, 9%) ;        
             border-radius: 4px;        
             transform: rotate(180deg);
@@ -106,20 +107,8 @@
 
 
         function updateElementSize(e) {
-            // Update width
-            const spec = document.getElementById("spectrum");   
-
-
-            const barCount=spec.childNodes.length-1;
-            const barWidth= (spec.getBoundingClientRect().width - (barCount*6)) / barCount;
-            document.documentElement.style.setProperty("--levelbar-width",barWidth+"px")                         
-
-            
-            console.log("Default H :",window.defaultHeight,"Spec :", spec.getBoundingClientRect().height);
-
-            initSpectrum()
-
-
+            console.log("Default H :",window.defaultHeight,"Spec :", document.getElementById("spectrum").getBoundingClientRect().height);
+            initSpectrum();
         }
 
         const  freq = [ '25', '30', '40', '50', '63', '80', '100', '125', '160', '200', '250',
@@ -131,17 +120,13 @@
             DSP = window.opener.parent.DSP;            
 
             const spec = document.getElementById("spectrum");   
-            const barCount=freq.length-1;
-            const barWidth= ((spec.getBoundingClientRect().width - (barCount*6)) / barCount);
-            
-            document.documentElement.style.setProperty("--levelbar-width",barWidth+"px");
             
             let barHeight = spec.getBoundingClientRect().height;
             let boxHeight = 6+2;
             const boxCount =Math.round(barHeight/boxHeight);     
             
             spec.innerHTML='';
-            for (i=0;i<=barCount;i++){
+            for (i=0;i<freq.length;i++){
                 let bar = document.createElement("div");
                 bar.className='levelbar';        
                 bar.setAttribute('freq',freq[i]);        

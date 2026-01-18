@@ -114,8 +114,6 @@ async function basicLoad() {
 function updateElementWidth() {
     const basicControls = document.getElementById("basicControls");
     const canvas = document.getElementById("plotCanvas");           
-    const ctx = document.getElementById('plotCanvas');    
-    DSP = window.parent.DSP;            
     
     // Compute canvas horizontal padding from CSS to ensure visual width alignment
     const canvasStyle = getComputedStyle(canvas);
@@ -278,13 +276,10 @@ const  freq = ['25', '30', '40', '50', '63', '80', '100', '125', '160', '200', '
 async function initSpectrum(){          
     // Create bars and boxes
     const spec = document.getElementById("spectrum");   
-    const barCount=freq.length-1;
-    const barWidth= ((spec.getBoundingClientRect().width - (barCount*6)) / barCount);
-    document.documentElement.style.setProperty("--levelbar-width",barWidth+"px");    
 
     let bar,box;
     spec.innerHTML='';
-    for (i=0;i<=barCount;i++){
+    for (i=0;i<freq.length;i++){
         bar = document.createElement("div");
         bar.className='levelbar';        
         bar.setAttribute('freq',freq[i]);        

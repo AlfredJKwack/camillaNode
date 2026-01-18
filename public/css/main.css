@@ -671,10 +671,12 @@ select {
 
 #spectrum {
     display: grid;        
-    grid-template-columns: repeat(60,auto);            
-    align-items:end;
+    grid-template-columns: repeat(30, minmax(0, 1fr));            
+    align-items: end;
+    gap: 4px;
     padding: 5px;
     height: var(--spectrum-height);
+    box-sizing: border-box;
 }
 
 #spectrum::before {
@@ -689,9 +691,9 @@ select {
     align-items: center;
     justify-items: baseline;
     position: relative;
-    width: var(--levelbar-width);
+    width: 100%;
     height: calc(var(--spectrum-height) - 10px);
-    margin-inline: 2px;    
+    margin: 0;    
     font-size: 11px;
     background-color: hsl(var(--bck-hue), 40%, 10%); 
     border-radius: 4px;        
