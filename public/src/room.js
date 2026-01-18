@@ -181,7 +181,13 @@ function createNode(component, channelNo, xPos) {
     
     // Add context menu for mixer nodes (add-only)
     if (component.type === 'mixer') {
-        node.style.cursor = 'context-menu';
+        node.style.cursor = 'pointer';
+        
+        // Left click to edit mixer
+        node.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openMixerEditor(channelNo);
+        });
         
         node.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -318,6 +324,134 @@ function showError(message) {
 export async function refreshPipeline() {
     await DSP.downloadConfig();
     await renderPipeline();
+}
+
+/**
+ * Open mixer editor for a mixer node
+ */
+function openMixerEditor(destChannelNo) {
+    console.log(`Opening mixer editor for destination channel ${destChannelNo}`);
+    
+    const modal = document.getElementById('mixerEditorModal');
+    const modalTitle = document.getElementById('mixerModalTitle');
+    const mixerEditorContent = document.getElementById('mixerEditorContent');
+    
+    if (!modal || !modalTitle || !mixerEditorContent) {
+        console.error('Room EQ: Mixer editor modal elements not found');
+        return;
+    }
+    
+    // Get first mixer (assumes default "recombine" mixer structure)
+    const mixerName = Object.keys(DSP.config.mixers)[0];
+    const mixer = DSP.config.mixers[mixerName];
+    
+    if (!mixer) {
+        alert('No mixer configuration found');
+        return;
+    }
+    
+    // Find the mapping for this destination channel
+    const mapping = mixer.mapping.find(m => m.dest === destChannelNo);
+    
+    if (!mapping) {
+        alert(`No mixer mapping found for channel ${destChannelNo}`);
+        return;
+    }
+    
+    // Clear previous content
+    mixerEditorContent.innerHTML = '';
+    modalTitle.textContent = `Edit Mixer: ${mixerName} (Destination Channel ${destChannelNo})`;
+    
+    // Build editor UI
+    const editorDiv = document.createElement('div');
+    editorDiv.className = 'mixerEditorPanel';
+    
+    // Create header row
+    const headerRow = document.createElement('div');
+    headerRow.className = 'mixerSourceHeader';
+    headerRow.innerHTML = `
+        <span>Source Ch</span>
+        <span>Gain (dB)</span>
+        <span>Mute</span>
+        <span>Inverted</span>
+    `;
+    editorDiv.appendChild(headerRow);
+    
+    // Create a row for each source
+    mapping.sources.forEach((source, index) => {
+        const sourceRow = document.createElement('div');
+        sourceRow.className = 'mixerSourceRow';
+        sourceRow.setAttribute('data-source-index', index);
+        
+        // Channel number (read-only)
+        const channelLabel = document.createElement('span');
+        channelLabel.className = 'mixerSourceChannel';
+        channelLabel.textContent = `Channel ${source.channel}`;
+        sourceRow.appendChild(channelLabel);
+        
+        // Gain input
+        const gainInput = document.createElement('input');
+        gainInput.type = 'number';
+        gainInput.className = 'mixerGainInput';
+        gainInput.value = source.gain;
+        gainInput.step = 0.1;
+        gainInput.setAttribute('data-param', 'gain');
+        sourceRow.appendChild(gainInput);
+        
+        // Mute checkbox
+        const muteCheckbox = document.createElement('input');
+        muteCheckbox.type = 'checkbox';
+        muteCheckbox.className = 'mixerCheckbox';
+        muteCheckbox.checked = source.mute || false;
+        muteCheckbox.setAttribute('data-param', 'mute');
+        sourceRow.appendChild(muteCheckbox);
+        
+        // Inverted checkbox
+        const invertedCheckbox = document.createElement('input');
+        invertedCheckbox.type = 'checkbox';
+        invertedCheckbox.className = 'mixerCheckbox';
+        invertedCheckbox.checked = source.inverted || false;
+        invertedCheckbox.setAttribute('data-param', 'inverted');
+        sourceRow.appendChild(invertedCheckbox);
+        
+        editorDiv.appendChild(sourceRow);
+    });
+    
+    // Add to modal
+    mixerEditorContent.appendChild(editorDiv);
+    
+    // Setup close handlers
+    const closeBtn = document.getElementById('closeMixerEditor');
+    const closeHandler = async () => {
+        // Collect values from UI
+        const sourceRows = mixerEditorContent.querySelectorAll('.mixerSourceRow');
+        sourceRows.forEach((row, index) => {
+            const gainInput = row.querySelector('[data-param="gain"]');
+            const muteCheckbox = row.querySelector('[data-param="mute"]');
+            const invertedCheckbox = row.querySelector('[data-param="inverted"]');
+            
+            mapping.sources[index].gain = parseFloat(gainInput.value);
+            mapping.sources[index].mute = muteCheckbox.checked;
+            mapping.sources[index].inverted = invertedCheckbox.checked;
+        });
+        
+        modal.style.display = 'none';
+        await DSP.uploadConfig();
+        await refreshPipeline();
+        closeBtn.removeEventListener('click', closeHandler);
+    };
+    closeBtn.addEventListener('click', closeHandler);
+    
+    // Close on outside click
+    modal.addEventListener('click', function outsideClickHandler(e) {
+        if (e.target === modal) {
+            closeHandler();
+            modal.removeEventListener('click', outsideClickHandler);
+        }
+    });
+    
+    // Show modal
+    modal.style.display = 'flex';
 }
 
 /**
